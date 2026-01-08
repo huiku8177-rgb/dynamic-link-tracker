@@ -15,6 +15,17 @@ export default defineConfig({
       '~/': `${path.resolve(__dirname, 'src')}/`,
     },
   },
+  server: {
+    proxy: {
+      // 模拟 Nginx 的 location /api/ 配置
+      '/api': {
+        target: 'http://localhost:8080', // 后端真实地址
+        changeOrigin: true,              // 允许跨域
+        // 如果后端接口本身不带 /api，可以用 rewrite 去掉它
+        // rewrite: (path) => path.replace(/^\/api/, '') 
+      }
+    }
+  },
 
   css: {
     preprocessorOptions: {

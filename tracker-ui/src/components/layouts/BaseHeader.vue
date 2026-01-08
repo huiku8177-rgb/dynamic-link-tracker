@@ -4,6 +4,7 @@ import { repository } from '~/../package.json'
 import { toggleDark } from '~/composables'
 import { Plus, Link } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { shortLinkApi } from '~/api/shortLink';
 
 // --- 弹窗逻辑控制 ---
 const dialogVisible = ref(false)
@@ -18,15 +19,32 @@ const linkForm = reactive({
 const openCreateDialog = () => {
   dialogVisible.value = true
 }
+const handleCreate = async () => {
+  // 1. 打印检查，确保 linkForm 里确实有数据
+  console.log('当前表单数据:', linkForm); 
 
-const handleCreate = () => {
-  // 明天这里将对接后端 Java 接口
-  console.log('提交数据:', linkForm)
-  ElMessage.success('短链接生成成功！（后端模拟）')
-  dialogVisible.value = false
-  // 清空表单
-  linkForm.longUrl = ''
-}
+  // 2. 构造干净的对象传参
+  const submitData = {
+    longUrl: linkForm.longUrl,
+    workspace: linkForm.workspace,
+    expireDate: linkForm.expireDate // 🚨 确保这里没有引号，是直接引用变量
+  };
+
+  try {
+    // 3. 传入构造好的对象
+    const res = await shortLinkApi.create(submitData);
+    
+    ElMessage.success(`生成成功: ${res}`);
+    dialogVisible.value = false;
+    
+    // 4. 重置表单（建议重置整个对象或 expireDate）
+    linkForm.longUrl = '';
+    linkForm.expireDate = ''; 
+  } catch (error) {
+    // 拦截器里已经有 ElMessage 了，这里只需处理逻辑
+    console.error('生成失败', error);
+  }
+};
 </script>
 
 <template>
@@ -48,8 +66,8 @@ const handleCreate = () => {
       <template #title>
         默认工作空间
       </template>
-      <el-menu-item index="2-1">个人项目</el-menu-item>
-      <el-menu-item index="2-2">团队协作</el-menu-item>
+      <el-menu-item index="/personal">个人项目</el-menu-item>
+      <el-menu-item index="/team">团队协作</el-menu-item>
       <el-divider style="margin: 4px 0" />
       <el-menu-item index="2-3">管理工作区...</el-menu-item>
     </el-sub-menu>
@@ -87,7 +105,12 @@ const handleCreate = () => {
         </el-select>
       </el-form-item>
       <el-form-item label="有效期至" :label-width="formLabelWidth">
-        <el-date-picker v-model="linkForm.expireDate" type="date" placeholder="选择过期时间（可选）" style="width: 100%" />
+        <el-date-picker v-model="linkForm.expireDate"
+         type="datetime" placeholder="选择过期时间（可选）"
+          style="width: 100%"
+          format="YYYY-MM-DD HH:mm:ss"
+  value-format="YYYY-MM-DD HH:mm:ss"
+         />
       </el-form-item>
     </el-form>
     <template #footer>
