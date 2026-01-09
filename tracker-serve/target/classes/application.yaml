@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: tracker-serve
+
+  datasource:
+    # 数据库连接配置
+    url: jdbc:mysql://localhost:3306/link_tracker?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=UTF-8
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+    # 🚨 修正：hikari 必须在 datasource 下级
+    hikari:
+      maximum-pool-size: 20      # 最大连接池数量
+      minimum-idle: 5            # 最小空闲连接数
+      idle-timeout: 300000       # 空闲连接存活时间
+      connection-timeout: 20000  # 连接超时等待时间
+      max-lifetime: 1200000      # 连接最大生命周期
+      pool-name: LinkTrackerHikariPool
+
+  jpa:
+    hibernate:
+      ddl-auto: update           # 自动根据实体类建表/更新表
+    show-sql: true               # 控制台打印 SQL
+    properties:
+      hibernate:
+        format_sql: true         # 格式化输出的 SQL，更易读
+        # 强制指定 MySQL 方言，解决找不到 Dialect 的报错
+        dialect: org.hibernate.dialect.MySQLDialect

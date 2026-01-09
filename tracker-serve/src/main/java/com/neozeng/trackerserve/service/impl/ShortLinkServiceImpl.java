@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 /**
  * @author strive_qin
@@ -53,8 +54,42 @@ public class ShortLinkServiceImpl implements ShortLinkService {
 
         // 3. 更新短码并再次保存
         link.setShortCode(shortCode);
-        shortLinkMapper.save(link);
-
         return shortCode;
+    }
+
+
+    /**
+     * 获取短链接列表
+     * @return
+     */
+    @Override
+    public List<ShortLink> listShortLinks() {
+        log.info("获取短链接列表");
+        return shortLinkMapper.findAll();
+    }
+
+    @Override
+    public void deleteShortLink(Long id) {
+        shortLinkMapper.deleteById(id);
+
+    }
+
+    @Override
+    public String getRedirectUrl(String shortCode) {
+        ShortLink link = shortLinkMapper.findByShortCode(shortCode);
+        if (link != null) {
+            return link.getLongUrl();
+        }
+        return null;
+
+    }
+
+    @Override
+    public void incrementClicks(String shortCode) {
+        ShortLink link = shortLinkMapper.findByShortCode(shortCode);
+        if (link != null) {
+            link.setTotalClicks(link.getTotalClicks() + 1);
+            shortLinkMapper.save(link);
+        }
     }
 }

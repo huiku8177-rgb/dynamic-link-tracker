@@ -12,5 +12,6 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public interface ShortLinkMapper extends JpaRepository<ShortLink, Long> {
-    // 只要这一行，你就拥有了增删改查所有功能
+    ShortLink findByShortCode(String shortCode);
+
 }

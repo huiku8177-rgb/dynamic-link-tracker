@@ -1,6 +1,9 @@
 package com.neozeng.trackerserve.service;
 
+import com.neozeng.trackerserve.pojo.ShortLink;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 /**
  * @author strive_qin
@@ -12,4 +15,11 @@ import org.springframework.stereotype.Service;
 public interface ShortLinkService {
      String createShortLink(String longUrl, String workspace, String expireDate) ;
 
+    List<ShortLink> listShortLinks();
+
+    void deleteShortLink(Long id);
+
+    String getRedirectUrl(String shortCode);
+
+    void incrementClicks(String shortCode);
 }
