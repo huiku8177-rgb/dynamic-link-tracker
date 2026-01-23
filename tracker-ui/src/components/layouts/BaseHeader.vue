@@ -1,50 +1,130 @@
 <script lang="ts" setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { repository } from '~/../package.json'
 import { toggleDark } from '~/composables'
-import { Plus, Link } from '@element-plus/icons-vue'
+import { useAuth } from '~/composables/useAuth'
 import { ElMessage } from 'element-plus'
-import { shortLinkApi } from '~/api/shortLink';
+import { User, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { shortLinkApi } from '~/api/shortLink'
+import { configApi } from '~/api/config'
 
 // --- 弹窗逻辑控制 ---
 const dialogVisible = ref(false)
 const formLabelWidth = '100px'
 
+// 系统配置
+const baseDomain = ref('http://localhost:8080/')
+const defaultExpireDays = ref(7)
+const DEFAULT_WORKSPACE = '默认空间'
+
 const linkForm = reactive({
   longUrl: '',
-  workspace: '个人项目',
   expireDate: ''
 })
 
+// 加载系统配置
+const loadSystemConfig = async () => {
+  try {
+    const configs = await configApi.getAll()
+    if (configs.base_domain) {
+      baseDomain.value = configs.base_domain.endsWith('/') 
+        ? configs.base_domain 
+        : configs.base_domain + '/'
+    }
+    if (configs.default_expire_days) {
+      defaultExpireDays.value = Number(configs.default_expire_days)
+    }
+  } catch (error) {
+    console.warn('获取系统配置失败，使用默认值')
+  }
+}
+
 const openCreateDialog = () => {
+  // 检查是否已登录
+  if (!isLoggedIn.value) {
+    ElMessage.warning('请先登录后再创建短链接')
+    router.push('/login')
+    return
+  }
+  
+  // 打开对话框时，如果没有设置过期时间，自动设置默认过期时间
+  if (!linkForm.expireDate) {
+    const defaultDate = new Date()
+    defaultDate.setDate(defaultDate.getDate() + defaultExpireDays.value)
+    // 格式化为 YYYY-MM-DD HH:mm:ss
+    const year = defaultDate.getFullYear()
+    const month = String(defaultDate.getMonth() + 1).padStart(2, '0')
+    const day = String(defaultDate.getDate()).padStart(2, '0')
+    const hours = String(defaultDate.getHours()).padStart(2, '0')
+    const minutes = String(defaultDate.getMinutes()).padStart(2, '0')
+    const seconds = String(defaultDate.getSeconds()).padStart(2, '0')
+    linkForm.expireDate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  }
   dialogVisible.value = true
 }
-const handleCreate = async () => {
-  // 1. 打印检查，确保 linkForm 里确实有数据
-  console.log('当前表单数据:', linkForm); 
 
-  // 2. 构造干净的对象传参
+// 使用自定义事件来通知列表刷新
+const handleCreate = async () => { 
+
   const submitData = {
     longUrl: linkForm.longUrl,
-    workspace: linkForm.workspace,
-    expireDate: linkForm.expireDate // 🚨 确保这里没有引号，是直接引用变量
+    workspace: DEFAULT_WORKSPACE,
+    expireDate: linkForm.expireDate 
   };
 
   try {
-    // 3. 传入构造好的对象
+    // 2. 这里的 res 就是后端返回的 Result.success(shortCode) 中的数据部分
     const res = await shortLinkApi.create(submitData);
     
-    ElMessage.success(`生成成功: ${res}`);
+    // 使用系统配置中的基础域名
+    const fullUrl = `${baseDomain.value}${res}`
+
+    // 3. 显示成功提示，并自动复制到剪贴板
+    try {
+      await navigator.clipboard.writeText(fullUrl)
+      ElMessage({
+        message: `生成成功！链接已复制到剪贴板：${fullUrl}`,
+        type: 'success',
+        duration: 4000,
+        showClose: true
+      })
+    } catch (err) {
+      ElMessage({
+        message: `生成成功！地址：${fullUrl}`,
+        type: 'success',
+        duration: 5000,
+        showClose: true
+      })
+    }
+
     dialogVisible.value = false;
     
-    // 4. 重置表单（建议重置整个对象或 expireDate）
+    // 4. 重置表单
     linkForm.longUrl = '';
     linkForm.expireDate = ''; 
-  } catch (error) {
-    // 拦截器里已经有 ElMessage 了，这里只需处理逻辑
-    console.error('生成失败', error);
+
+    // 5. 触发全局事件，通知列表刷新
+    window.dispatchEvent(new CustomEvent('shortLinkCreated'));
+
+  } catch (error: any) {
+    ElMessage.error(error.message || '生成失败，请稍后重试')
   }
 };
+
+const router = useRouter()
+const { isLoggedIn, userInfo, logout } = useAuth()
+
+// 登出处理
+const handleLogout = () => {
+  logout()
+  router.push('/login')
+}
+
+// 页面加载时获取系统配置
+onMounted(() => {
+  loadSystemConfig()
+})
 </script>
 
 <template>
@@ -56,25 +136,50 @@ const handleCreate = async () => {
       </div>
     </el-menu-item>
 
-    <div class="flex-grow" /> <el-menu-item index="/create">
+    <div class="flex-grow" />
+
+    <el-menu-item index="/links">
 <el-button type="primary" round @click="openCreateDialog">
   + 新建短链接
 </el-button>
     </el-menu-item>
 
-    <el-sub-menu index="2">
+    <!-- 用户信息区域 -->
+    <template v-if="isLoggedIn && userInfo">
+      <el-sub-menu index="user-menu">
       <template #title>
-        默认工作空间
+          <div class="user-info">
+            <el-avatar :size="32" style="margin-right: 8px;">
+              {{ userInfo.nickname?.[0] || userInfo.username[0] }}
+            </el-avatar>
+            <span>{{ userInfo.nickname || userInfo.username }}</span>
+          </div>
       </template>
-      <el-menu-item index="/personal">个人项目</el-menu-item>
-      <el-menu-item index="/team">团队协作</el-menu-item>
+        <el-menu-item index="user-profile">
+          <el-icon><User /></el-icon>
+          <span>个人中心</span>
+        </el-menu-item>
+        <el-menu-item index="user-settings">
+          <el-icon><Setting /></el-icon>
+          <span>账户设置</span>
+        </el-menu-item>
       <el-divider style="margin: 4px 0" />
-      <el-menu-item index="2-3">管理工作区...</el-menu-item>
+        <el-menu-item @click="handleLogout">
+          <el-icon><SwitchButton /></el-icon>
+          <span>退出登录</span>
+        </el-menu-item>
     </el-sub-menu>
+    </template>
 
-    <el-menu-item index="/notifications">
-      消息通知
+    <!-- 未登录时显示登录/注册按钮 -->
+    <template v-else>
+      <el-menu-item index="/login">
+        <el-button link>登录</el-button>
+      </el-menu-item>
+      <el-menu-item index="/register">
+        <el-button type="primary" round>注册</el-button>
     </el-menu-item>
+    </template>
 
     <el-menu-item h="full" @click="toggleDark()">
       <button
@@ -97,12 +202,6 @@ const handleCreate = async () => {
     <el-form :model="linkForm">
       <el-form-item label="原始链接" :label-width="formLabelWidth">
         <el-input v-model="linkForm.longUrl" autocomplete="off" placeholder="请粘贴以 http(s):// 开头的长链接" />
-      </el-form-item>
-      <el-form-item label="所属空间" :label-width="formLabelWidth">
-        <el-select v-model="linkForm.workspace" placeholder="选择归属项目">
-          <el-option label="个人项目" value="personal" />
-          <el-option label="团队协作" value="team" />
-        </el-select>
       </el-form-item>
       <el-form-item label="有效期至" :label-width="formLabelWidth">
         <el-date-picker v-model="linkForm.expireDate"
@@ -129,6 +228,12 @@ const handleCreate = async () => {
   
   .flex-grow {
     flex-grow: 1;
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 }
 </style>

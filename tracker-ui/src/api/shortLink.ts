@@ -18,6 +18,23 @@ export interface ShortLinkItem {
   createTime: string;   // 创建时间
 }
 
+export interface UpdateShortLinkParam {
+  longUrl: string;
+  expireTime: string;
+}
+// 访问日志数据结构（对应 VisitLog 实体）
+export interface VisitLog {
+  id: number
+  shortCode: string
+  ip: string
+  location?: string
+  userAgent?: string
+  createTime: string
+}
+
+
+
+
 export interface CreateShortLinkParam {
   longUrl: string;
   workspace: string;
@@ -55,6 +72,28 @@ export const shortLinkApi = {
     return request<void>({
       url: `/shortLink/${id}`,
       method: 'delete'
+    });
+  },
+
+  /**
+   * 修改短链接信息
+   * 对应后端 PUT /shortLink/{id}
+   */
+  update(id: number, data: UpdateShortLinkParam) {
+    return request<void>({
+      url: `/shortLink/${id}`,
+      method: 'put',
+      data
+    });
+  },
+
+  /**
+   * 获取最近 5 条访问记录
+   */
+  recentVisits() {
+    return request<VisitLog[]>({
+      url: '/shortLink/visits/recent',
+      method: 'get'
     });
   }
 };

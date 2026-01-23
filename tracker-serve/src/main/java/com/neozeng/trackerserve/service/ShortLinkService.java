@@ -1,8 +1,9 @@
 package com.neozeng.trackerserve.service;
 
 import com.neozeng.trackerserve.pojo.ShortLink;
-import org.springframework.stereotype.Service;
+import com.neozeng.trackerserve.pojo.dto.TopLinkItem;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -22,4 +23,10 @@ public interface ShortLinkService {
     String getRedirectUrl(String shortCode);
 
     void incrementClicks(String shortCode);
+
+    void recordVisitLog(String shortCode, String ip, String userAgent);
+
+    boolean updateShortLink(Long id, String longUrl, LocalDateTime expireDate);
+
+    List<TopLinkItem> getTopLinksRealTime(int limit);
 }

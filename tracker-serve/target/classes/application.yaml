@@ -1,7 +1,6 @@
 spring:
   application:
     name: tracker-serve
-
   datasource:
     # 数据库连接配置
     url: jdbc:mysql://localhost:3306/link_tracker?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=UTF-8
@@ -17,6 +16,18 @@ spring:
       connection-timeout: 20000  # 连接超时等待时间
       max-lifetime: 1200000      # 连接最大生命周期
       pool-name: LinkTrackerHikariPool
+      initialization-fail-timeout: 60000 # 启动时如果连不上，持续尝试 60 秒
+  data:
+    redis:
+      host: 192.168.100.130
+      port: 6379
+      password: 123321        # 如果没有密码就留空
+      database: 0      # 指定数据库索引
+      lettuce:
+        pool:
+          max-active: 20 # 最大活跃连接
+          max-idle: 10   # 最大空闲连接
+          max-wait: -1ms # 连接分配阻塞时的最大等待时间
 
   jpa:
     hibernate:
@@ -27,3 +38,30 @@ spring:
         format_sql: true         # 格式化输出的 SQL，更易读
         # 强制指定 MySQL 方言，解决找不到 Dialect 的报错
         dialect: org.hibernate.dialect.MySQLDialect
+jwt:
+  # 必须 >= 32个字符（256位），否则启动会报 WeakKeyException
+  secret: zeng-tracker-secure-key-ensure-length-is-over-32-bytes-please
+  # 过期时间：7天 (1000 * 60 * 60 * 24 * 7)
+  expiration: 604800000
+
+# SpringDoc OpenAPI 配置
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    # 显示操作ID
+    display-request-duration: true
+    # 默认展开所有操作
+    doc-expansion: none
+    # 显示模型
+    show-extensions: true
+    # 显示请求头
+    show-common-extensions: true
+  # 分组配置（可选）
+  group-configs:
+    - group: 'default'
+      display-name: '所有接口'
+      paths-to-match: '/**'

@@ -1,12 +1,406 @@
 <template>
-  <div class="p-4">
-    <h2 class="text-2xl font-bold mb-4">链接管理</h2>
-    <el-table :data="[]" style="width: 100%" border>
-      <el-table-column prop="shortUrl" label="短链接" />
-      <el-table-column prop="longUrl" label="原始链接" />
-      <el-table-column label="操作" width="120">
-        <el-button link type="primary">编辑</el-button>
+  <div class="list-container" style="padding: 24px;">
+    <!-- 未登录时显示提示 -->
+    <LoginPrompt v-if="!isLoggedIn" />
+    
+    <!-- 已登录时显示正常内容 -->
+    <template v-else>
+      <div
+        style="
+          margin-bottom: 20px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h2 style="margin: 0;">我的短链接</h2>
+        <el-tag type="info">{{ tableData.length }} 条记录</el-tag>
+      </div>
+      <el-button type="primary" @click="handleRefresh">刷新列表</el-button>
+    </div>
+
+    <el-table
+      :data="tableData"
+      v-loading="loading"
+      style="width: 100%; border-radius: 8px;"
+      border
+      stripe
+      empty-text="暂无数据，点击右上角「新建短链接」开始创建"
+    >
+      <el-table-column label="短链接" min-width="200">
+        <template #default="{ row }">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-link 
+              type="primary" 
+              :href="getFullShortLink(row.shortCode)"
+              target="_blank" 
+              :underline="false"
+              @click.prevent="handleShortLinkClick(row.shortCode)"
+            >
+              {{ displayShortLink(row.shortCode) }}
+            </el-link>
+            <el-button link icon="DocumentCopy" @click="copyLink(row.shortCode)" />
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column
+        prop="longUrl"
+        label="原始链接"
+        show-overflow-tooltip
+        min-width="260"
+      />
+
+      <el-table-column label="访问统计" width="140" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.totalClicks > 0 ? 'danger' : 'info'" effect="plain">
+            🔥 {{ row.totalClicks || 0 }} 次
+          </el-tag>
+        </template>
+      </el-table-column>
+      
+      <el-table-column prop="expireTime" label="有效期" width="180">
+        <template #default="{ row }">
+          {{ row.expireTime || '永久有效' }}
+        </template>
+      </el-table-column>
+
+      <el-table-column label="操作" width="190" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button link @click="openDetails(row)">管理</el-button>
+          <el-popconfirm title="确定要删除吗？" @confirm="handleDelete(row.id)">
+            <template #reference>
+              <el-button link type="danger">删除</el-button>
+            </template>
+          </el-popconfirm>
+        </template>
       </el-table-column>
     </el-table>
+    
+    <el-drawer v-model="drawerVisible" title="链接详情" size="35%" direction="rtl">
+      <div v-if="selectedItem">
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+          "
+        >
+          <div style="font-weight: 600">
+            {{ displayShortLink(selectedItem.shortCode) }}
+          </div>
+          <el-button
+            size="small"
+            type="primary"
+            @click="copyLink(selectedItem.shortCode!)"
+            >复制链接</el-button
+          >
+        </div>
+
+        <el-descriptions :column="1" size="small" border>
+          <el-descriptions-item label="原始链接">
+            {{ selectedItem.longUrl }}
+          </el-descriptions-item>
+          <el-descriptions-item label="访问次数">
+            {{ selectedItem.totalClicks || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="有效期">
+            {{ selectedItem.expireTime || '永久有效' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="创建于">
+            {{ selectedItem.createTime || '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div style="margin-top: 20px;">
+          <div style="font-weight: 600; margin-bottom: 6px;">详细信息</div>
+          <el-descriptions :column="1" size="small" border>
+            <el-descriptions-item label="工作空间">
+              {{ selectedItem.workspace || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="短码">
+              {{ selectedItem.shortCode }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <div style="font-weight: 600; margin-bottom: 6px;">后端返回数据 (JSON)</div>
+          <pre
+            style="
+              background: #111827;
+              color: #e5e7eb;
+              padding: 12px;
+              border-radius: 6px;
+              font-size: 12px;
+              overflow: auto;
+              border: 1px solid #374151;
+            "
+          >
+{{ jsonString }}</pre
+          >
+        </div>
+      </div>
+    </el-drawer>
+  
+  <el-dialog
+      v-model="editDialogVisible"
+      title="编辑短链接"
+      width="520px"
+      :close-on-click-modal="false"
+      @close="handleEditDialogClose"
+    >
+      <el-form
+        ref="editFormRef"
+        :model="editForm"
+        :rules="rules"
+        label-width="90px"
+        status-icon
+      >
+        <el-form-item label="原始链接" prop="longUrl">
+          <el-input
+            v-model="editForm.longUrl"
+            placeholder="请输入原始链接"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="有效期" prop="expireTime">
+          <el-date-picker
+            v-model="editForm.expireTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm:ss"
+            placeholder="请选择有效期"
+            style="width: 100%;"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取 消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmitEdit">
+          保 存
+        </el-button>
+      </template>
+    </el-dialog>
+    </template>
   </div>
 </template>
+
+<script setup lang="ts">
+import { reactive, ref, onMounted, onUnmounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import type { FormInstance, FormRules, FormItemRule } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import {
+  shortLinkApi,
+  type ShortLinkItem,
+  type UpdateShortLinkParam,
+} from '~/api/shortLink'
+import { configApi } from '~/api/config'
+import { useAuth } from '~/composables/useAuth'
+import LoginPrompt from '~/components/LoginPrompt.vue'
+
+const router = useRouter()
+const { isLoggedIn } = useAuth()
+
+const tableData = ref<ShortLinkItem[]>([])
+const loading = ref(false)
+const drawerVisible = ref(false)
+const selectedItem = ref<ShortLinkItem | null>(null)
+
+const jsonString = computed(() =>
+  selectedItem.value ? JSON.stringify(selectedItem.value, null, 2) : '',
+)
+
+const editDialogVisible = ref(false)
+const submitting = ref(false)
+const editFormRef = ref<FormInstance>()
+const editForm = reactive<UpdateShortLinkParam & { id: number | null }>({
+  id: null,
+  longUrl: '',
+  expireTime: '',
+})
+const validateUrl: FormItemRule['validator'] = (
+  _rule,
+  value: any,
+  callback: (error?: string | Error) => void,
+) => {
+  const val = (value || '').trim()
+  if (!val) return callback(new Error('请输入原始链接'))
+  try {
+    const url = new URL(val)
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return callback(new Error('仅支持 http/https'))
+    }
+    return callback()
+  } catch (e) {
+    return callback(new Error('请输入合法的 URL'))
+  }
+}
+
+const rules: FormRules = {
+  longUrl: [
+    { required: true, validator: validateUrl, trigger: ['blur', 'change'] },
+  ],
+  expireTime: [
+    { required: true, message: '请选择有效期', trigger: 'change' },
+  ],
+}
+
+// 动态获取的链接前缀（从系统配置中获取）
+const linkPrefix = ref('http://localhost:8080/')
+
+const displayShortLink = (shortCode: string) => {
+  const cleaned = linkPrefix.value
+    .replace('http://', '')
+    .replace('https://', '')
+    .replace(/\/$/, '')
+  return `${cleaned}/${shortCode}`
+}
+
+// 获取完整的短链接 URL（确保有协议前缀）
+const getFullShortLink = (shortCode: string): string => {
+  let prefix = linkPrefix.value
+  // 确保有协议前缀
+  if (!prefix.startsWith('http://') && !prefix.startsWith('https://')) {
+    prefix = `http://${prefix}`
+  }
+  // 确保末尾有斜杠
+  if (!prefix.endsWith('/')) {
+    prefix = `${prefix}/`
+  }
+  return `${prefix}${shortCode}`
+}
+
+// 处理短链接点击事件
+const handleShortLinkClick = (shortCode: string) => {
+  const fullUrl = getFullShortLink(shortCode)
+  window.open(fullUrl, '_blank')
+}
+
+// 加载系统配置中的基础域名
+const loadBaseDomain = async () => {
+  try {
+    const configs = await configApi.getAll()
+    if (configs.base_domain) {
+      let domain = configs.base_domain
+      // 确保有协议前缀
+      if (!domain.startsWith('http://') && !domain.startsWith('https://')) {
+        domain = `http://${domain}`
+      }
+      // 确保末尾有斜杠
+      linkPrefix.value = domain.endsWith('/') ? domain : `${domain}/`
+    }
+  } catch (error) {
+    console.warn('获取基础域名配置失败，使用默认值')
+  }
+}
+
+const loadData = async () => {
+  loading.value = true
+  try {
+    const res = (await shortLinkApi.list()) as any
+    tableData.value = Array.isArray(res) ? res : res.data
+  } catch (error) {
+    ElMessage.error('获取列表失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+const copyLink = async (shortCode: string) => {
+  try {
+    const fullUrl = `${linkPrefix.value}${shortCode}`
+    await navigator.clipboard.writeText(fullUrl)
+    ElMessage.success('链接已复制')
+  } catch (err) {
+    ElMessage.error('复制失败')
+  }
+}
+
+const openDetails = (row: ShortLinkItem) => {
+  selectedItem.value = row
+  drawerVisible.value = true
+}
+
+const openEdit = (row: ShortLinkItem) => {
+  if (!isLoggedIn.value) {
+    ElMessage.warning('请先登录后再操作')
+    router.push('/login')
+    return
+  }
+  editForm.id = row.id
+  editForm.longUrl = (row.longUrl || '').trim()
+  editForm.expireTime = row.expireTime || ''
+  editDialogVisible.value = true
+}
+
+const resetEditForm = () => {
+  if (editFormRef.value) editFormRef.value.clearValidate()
+  editForm.id = null
+  editForm.longUrl = ''
+  editForm.expireTime = ''
+}
+
+const handleEditDialogClose = () => {
+  resetEditForm()
+}
+
+const handleSubmitEdit = async () => {
+  if (!editFormRef.value) return
+  const valid = await editFormRef.value.validate()
+  if (!valid || editForm.id === null) return
+  submitting.value = true
+  try {
+    const payload: UpdateShortLinkParam = {
+      longUrl: editForm.longUrl.trim(),
+      expireTime: editForm.expireTime,
+    }
+    await shortLinkApi.update(editForm.id, payload)
+    ElMessage.success('修改成功')
+    editDialogVisible.value = false
+    resetEditForm()
+    loadData()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '修改失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+const handleRefresh = () => loadData()
+
+const handleDelete = async (id: number) => {
+  try {
+    await shortLinkApi.delete(id)
+    ElMessage.success('删除成功')
+    loadData()
+  } catch (error: any) {
+    ElMessage.error(error.message || '删除失败')
+  }
+}
+
+const handleWindowFocus = () => {
+  loadData()
+}
+
+// 监听短链接创建事件，自动刷新列表（新建组件会派发 window 事件）
+const handleShortLinkCreated = () => {
+  loadData()
+}
+
+onMounted(async () => {
+  await loadBaseDomain()
+  loadData()
+  window.addEventListener('focus', handleWindowFocus)
+  window.addEventListener('shortLinkCreated', handleShortLinkCreated)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('focus', handleWindowFocus)
+  window.removeEventListener('shortLinkCreated', handleShortLinkCreated)
+})
+</script>

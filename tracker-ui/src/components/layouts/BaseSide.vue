@@ -7,6 +7,9 @@ import {
   Link,
   PieChart
 } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
+
+const $route = useRoute()
 
 function handleOpen(key: string, keyPath: string[]) {
   console.log('打开菜单:', key)
@@ -19,8 +22,8 @@ function handleClose(key: string, keyPath: string[]) {
 <template>
   <el-menu
     router
-    default-active="/dashboard"
     class="el-menu-vertical-demo"
+    :default-active="$route.path"
     @open="handleOpen"
     @close="handleClose"
   >
@@ -30,7 +33,7 @@ function handleClose(key: string, keyPath: string[]) {
     </el-menu-item>
 
     <el-menu-item index="/links">
-      <el-icon><IconMenu /></el-icon>
+      <el-icon><Link /></el-icon>
       <template #title>链接管理</template>
     </el-menu-item>
 
