@@ -125,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAuth } from '~/composables/useAuth'
 import * as echarts from 'echarts'
 import { statsApi, type VisitLog, type ClickTrendItem, type TopLinkItem } from '~/api/stats'
@@ -329,7 +329,12 @@ const handleResize = () => {
 }
 
 onMounted(async () => {
-  // 加载数据
+  // 未登录时，不请求后端数据，只展示 GuestView 和登录/注册按钮
+  if (!isLoggedIn.value) {
+    return
+  }
+
+  // 已登录时加载数据
   await Promise.all([
     loadClickTrend(),
     loadTopLinks(),
@@ -339,6 +344,21 @@ onMounted(async () => {
   // 监听窗口大小变化
   window.addEventListener('resize', handleResize)
 })
+
+// 当用户在当前页面完成登录后，自动加载数据
+watch(
+  () => isLoggedIn.value,
+  async (val) => {
+    if (val) {
+      await Promise.all([
+        loadClickTrend(),
+        loadTopLinks(),
+        loadVisitRecords()
+      ])
+      window.addEventListener('resize', handleResize)
+    }
+  }
+)
 
 onUnmounted(() => {
   // 销毁图表实例

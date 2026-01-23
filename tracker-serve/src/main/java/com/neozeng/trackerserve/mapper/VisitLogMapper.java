@@ -17,8 +17,9 @@ public interface VisitLogMapper extends JpaRepository<VisitLog, Long> {
     Page<VisitLog> findAll(Pageable pageable);
     
     /**
-     * 查询指定时间范围内的访问记录
+     * 查询指定用户在时间范围内的访问记录
      */
-    @Query("SELECT v FROM VisitLog v WHERE v.createTime >= :startTime ORDER BY v.createTime DESC")
-    List<VisitLog> findByCreateTimeAfter(@Param("startTime") LocalDateTime startTime);
+    @Query("SELECT v FROM VisitLog v WHERE v.userId = :userId AND v.createTime >= :startTime ORDER BY v.createTime DESC")
+    List<VisitLog> findByUserIdAndCreateTimeAfter(@Param("userId") Long userId,
+                                                  @Param("startTime") LocalDateTime startTime);
 }

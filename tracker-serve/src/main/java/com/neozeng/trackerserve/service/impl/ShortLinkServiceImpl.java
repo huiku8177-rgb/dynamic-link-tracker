@@ -10,6 +10,7 @@ import com.neozeng.trackerserve.pojo.User;
 import com.neozeng.trackerserve.pojo.VisitLog;
 import com.neozeng.trackerserve.pojo.dto.TopLinkItem;
 import com.neozeng.trackerserve.service.ShortLinkService;
+import com.neozeng.trackerserve.exception.UnAuthorizedException;
 import com.neozeng.trackerserve.util.Base62Utils;
 import com.neozeng.trackerserve.util.CacheClient;
 import com.neozeng.trackerserve.util.IpLocationUtils;
@@ -92,19 +93,32 @@ public class ShortLinkServiceImpl implements ShortLinkService {
 
 
     /**
-     * 获取短链接列表
-     * @return
-     */
-    /**
      * 获取短链接列表（实时合并 Redis 点击量）
      * @return
      */
     @Override
     public List<ShortLink> listShortLinks() {
-        log.info("开始获取短链接列表并合并实时计数值");
+        log.info("开始获取当前用户的短链接列表并合并实时计数值");
 
-        // 1. 从数据库获取所有原始记录
-        List<ShortLink> list = shortLinkMapper.findAll();
+        // 0. 获取当前登录用户
+        User user = UserHolder.getUser();
+        if (user == null) {
+            log.warn("listShortLinks 调用时未获取到用户信息，可能未登录或 Token 无效");
+            // 抛出未授权异常，由全局异常处理器统一返回 401
+            throw new UnAuthorizedException();
+        }
+
+        Long userId = user.getId();
+        // 游客模式：返回一组示例数据，而不是空列表
+        if (userId != null && userId == 0L) {
+            log.info("检测到游客模式，返回示例短链接列表");
+            return buildGuestMockShortLinks();
+        }
+
+        log.info("正在为用户 userId={} 查询短链接列表", userId);
+
+        // 1. 从数据库获取当前用户的原始记录
+        List<ShortLink> list = shortLinkMapper.findByUserId(userId);
 
         // 2. 遍历列表，将 Redis 中的“增量点击量”累加到对象中
         for (ShortLink link : list) {
@@ -125,6 +139,42 @@ public class ShortLinkServiceImpl implements ShortLinkService {
         }
 
         return list;
+    }
+
+    /**
+     * 游客模式下返回的示例短链接列表（仅展示用途，不落库）
+     */
+    private List<ShortLink> buildGuestMockShortLinks() {
+        LocalDateTime now = LocalDateTime.now();
+
+        ShortLink a = new ShortLink();
+        a.setId(1L);
+        a.setUserId(0L);
+        a.setLongUrl("https://example.com/landing-page");
+        a.setShortCode("guestA1");
+        a.setTotalClicks(128);
+        a.setExpireTime(now.plusDays(7));
+        a.setCreateTime(now.minusDays(2));
+
+        ShortLink b = new ShortLink();
+        b.setId(2L);
+        b.setUserId(0L);
+        b.setLongUrl("https://docs.dynamic-link-tracker.dev/guide");
+        b.setShortCode("guestB2");
+        b.setTotalClicks(56);
+        b.setExpireTime(null); // 永久有效
+        b.setCreateTime(now.minusDays(5));
+
+        ShortLink c = new ShortLink();
+        c.setId(3L);
+        c.setUserId(0L);
+        c.setLongUrl("https://blog.example.com/campaign-2026");
+        c.setShortCode("guestC3");
+        c.setTotalClicks(9);
+        c.setExpireTime(now.plusDays(1));
+        c.setCreateTime(now.minusHours(6));
+
+        return List.of(a, b, c);
     }
 
     @Override
@@ -160,16 +210,25 @@ public class ShortLinkServiceImpl implements ShortLinkService {
     @Override
     @Async
     public void incrementClicks(String shortCode) {
+        // 0. 根据短码查询短链接，获取归属用户
+        ShortLink link = shortLinkMapper.findByShortCode(shortCode);
+        Long userId = link != null ? link.getUserId() : null;
+
         // 1. 定义 Key（建议统一使用常量）
         String clicksKey = "shortLink:clicks:" + shortCode;
-        String rankingKey = "shortLink:ranking"; // 💡 排行榜的 ZSet Key
+        String globalRankingKey = "shortLink:ranking:global"; // 全局排行榜 ZSet Key（可选）
+        String userRankingKey = userId != null ? "shortLink:ranking:" + userId : null; // 用户私有排行榜 Key
 
         // 2. Redis 原子递增（用于每 100 次同步数据库的“计数器”）
         Long currentClicks = redisTemplate.opsForValue().increment(clicksKey, 1);
 
         // 3. 💡 增加 ZSet 的分数（用于实时排行榜）
-        // 这行代码会让该短链接在排行榜中的点击量实时 +1
-        redisTemplate.opsForZSet().incrementScore(rankingKey, shortCode, 1);
+        // 3.1 全局总榜（可选）
+        redisTemplate.opsForZSet().incrementScore(globalRankingKey, shortCode, 1);
+        // 3.2 当前短链接所属用户的私有榜
+        if (userRankingKey != null) {
+            redisTemplate.opsForZSet().incrementScore(userRankingKey, shortCode, 1);
+        }
 
         log.info("短链接 {} 点击量+1，当前增量计数值: {}", shortCode, currentClicks);
 
@@ -200,6 +259,12 @@ public class ShortLinkServiceImpl implements ShortLinkService {
             // 1. 创建访问日志对象
             VisitLog visitLog = new VisitLog();
             visitLog.setShortCode(shortCode);
+
+            // 1.1 根据短码反查短链接，填充所属用户 ID，便于后续按用户维度统计
+            ShortLink link = shortLinkMapper.findByShortCode(shortCode);
+            if (link != null && link.getUserId() != null) {
+                visitLog.setUserId(link.getUserId());
+            }
 
             // 2. 获取真实客户端 IP 地址（支持代理、负载均衡等场景）
 
@@ -258,18 +323,26 @@ public class ShortLinkServiceImpl implements ShortLinkService {
      */
     @Override
     public List<TopLinkItem> getTopLinksRealTime(int limit) {
-        // 1. 定义 ZSet 的 Key
-        String rankingKey = "shortLink:ranking";
+        // 0. 获取当前登录用户
+        User user = UserHolder.getUser();
+        if (user == null) {
+            throw new UnAuthorizedException();
+        }
 
-        // 2. 尝试从 Redis ZSet 获取前 N 名 (Score从高到低)
+        Long userId = user.getId();
+
+        // 1. 定义当前用户的 ZSet Key
+        String rankingKey = "shortLink:ranking:" + userId;
+
+        // 2. 尝试从 Redis ZSet 获取该用户前 N 名 (Score从高到低)
         Set<ZSetOperations.TypedTuple<String>> typedTuples =
                 redisTemplate.opsForZSet().reverseRangeWithScores(rankingKey, 0, limit - 1);
 
-        // 3. 如果 Redis 为空（比如刚上线），调用你现有的 Mapper 方法从 DB 查
+        // 3. 如果 Redis 为空（比如刚上线），调用 Mapper 方法从 DB 查该用户的数据
         if (CollUtil.isEmpty(typedTuples)) {
-            log.info("Redis排行榜为空，回退到数据库查询并预热数据");
+            log.info("用户 {} 的 Redis 排行榜为空，回退到数据库查询并预热数据", userId);
             Pageable pageable = PageRequest.of(0, limit);
-            List<ShortLink> topLinks = shortLinkMapper.findTopByOrderByTotalClicksDesc(pageable); //
+            List<ShortLink> topLinks = shortLinkMapper.findTopByUserIdOrderByTotalClicksDesc(userId, pageable); //
 
             // 顺便把 DB 数据异步存入 Redis，下次就快了 (预热逻辑)
             topLinks.forEach(link ->

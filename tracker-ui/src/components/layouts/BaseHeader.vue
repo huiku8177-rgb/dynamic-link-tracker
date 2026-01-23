@@ -41,27 +41,27 @@ const loadSystemConfig = async () => {
 }
 
 const openCreateDialog = () => {
-  // 检查是否已登录
-  if (!isLoggedIn.value) {
-    ElMessage.warning('请先登录后再创建短链接')
-    router.push('/login')
+  // 已登录：正常打开创建对话框
+  if (isLoggedIn.value) {
+    // 打开对话框时，如果没有设置过期时间，自动设置默认过期时间
+    if (!linkForm.expireDate) {
+      const defaultDate = new Date()
+      defaultDate.setDate(defaultDate.getDate() + defaultExpireDays.value)
+      const year = defaultDate.getFullYear()
+      const month = String(defaultDate.getMonth() + 1).padStart(2, '0')
+      const day = String(defaultDate.getDate()).padStart(2, '0')
+      const hours = String(defaultDate.getHours()).padStart(2, '0')
+      const minutes = String(defaultDate.getMinutes()).padStart(2, '0')
+      const seconds = String(defaultDate.getSeconds()).padStart(2, '0')
+      linkForm.expireDate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+    }
+    dialogVisible.value = true
     return
   }
-  
-  // 打开对话框时，如果没有设置过期时间，自动设置默认过期时间
-  if (!linkForm.expireDate) {
-    const defaultDate = new Date()
-    defaultDate.setDate(defaultDate.getDate() + defaultExpireDays.value)
-    // 格式化为 YYYY-MM-DD HH:mm:ss
-    const year = defaultDate.getFullYear()
-    const month = String(defaultDate.getMonth() + 1).padStart(2, '0')
-    const day = String(defaultDate.getDate()).padStart(2, '0')
-    const hours = String(defaultDate.getHours()).padStart(2, '0')
-    const minutes = String(defaultDate.getMinutes()).padStart(2, '0')
-    const seconds = String(defaultDate.getSeconds()).padStart(2, '0')
-    linkForm.expireDate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-  }
-  dialogVisible.value = true
+
+  // 游客或未登录：统一引导去注册页面
+  ElMessage.warning('注册后即可创建属于自己的短链接')
+  router.push('/register')
 }
 
 // 使用自定义事件来通知列表刷新

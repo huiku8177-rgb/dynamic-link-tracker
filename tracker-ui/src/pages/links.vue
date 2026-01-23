@@ -1,9 +1,9 @@
 <template>
   <div class="list-container" style="padding: 24px;">
-    <!-- 未登录时显示提示 -->
-    <LoginPrompt v-if="!isLoggedIn" />
+    <!-- 未登录且非游客时显示提示 -->
+    <LoginPrompt v-if="!isLoggedIn && !isGuest" />
     
-    <!-- 已登录时显示正常内容 -->
+    <!-- 已登录或游客模式时显示列表 -->
     <template v-else>
       <div
         style="
@@ -68,13 +68,38 @@
 
       <el-table-column label="操作" width="190" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link @click="openDetails(row)">管理</el-button>
-          <el-popconfirm title="确定要删除吗？" @confirm="handleDelete(row.id)">
+          <el-button
+            link
+            type="primary"
+            :disabled="isGuest"
+            @click="handleEditClick(row)"
+          >
+            编辑
+          </el-button>
+          <el-button
+            link
+            :disabled="isGuest"
+            @click="handleManageClick(row)"
+          >
+            管理
+          </el-button>
+          <el-popconfirm
+            v-if="!isGuest"
+            title="确定要删除吗？"
+            @confirm="handleDelete(row.id)"
+          >
             <template #reference>
               <el-button link type="danger">删除</el-button>
             </template>
           </el-popconfirm>
+          <el-button
+            v-else
+            link
+            type="danger"
+            disabled
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -201,10 +226,11 @@ import {
 } from '~/api/shortLink'
 import { configApi } from '~/api/config'
 import { useAuth } from '~/composables/useAuth'
+import { ElMessageBox } from 'element-plus'
 import LoginPrompt from '~/components/LoginPrompt.vue'
 
 const router = useRouter()
-const { isLoggedIn } = useAuth()
+const { isLoggedIn, isGuest } = useAuth()
 
 const tableData = ref<ShortLinkItem[]>([])
 const loading = ref(false)
@@ -326,12 +352,41 @@ const openDetails = (row: ShortLinkItem) => {
   drawerVisible.value = true
 }
 
-const openEdit = (row: ShortLinkItem) => {
+const guideRegister = () => {
+  ElMessageBox.alert(
+    '注册账号后即可创建和管理属于自己的短链接，并保存所有操作记录。',
+    '登录以解锁完整功能',
+    {
+      confirmButtonText: '前往注册',
+      callback: () => {
+        router.push('/register')
+      }
+    }
+  )
+}
+
+const handleEditClick = (row: ShortLinkItem) => {
+  if (isGuest.value) {
+    guideRegister()
+    return
+  }
   if (!isLoggedIn.value) {
     ElMessage.warning('请先登录后再操作')
     router.push('/login')
     return
   }
+  openEdit(row)
+}
+
+const handleManageClick = (row: ShortLinkItem) => {
+  if (isGuest.value) {
+    guideRegister()
+    return
+  }
+  openDetails(row)
+}
+
+const openEdit = (row: ShortLinkItem) => {
   editForm.id = row.id
   editForm.longUrl = (row.longUrl || '').trim()
   editForm.expireTime = row.expireTime || ''

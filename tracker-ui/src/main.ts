@@ -1,5 +1,8 @@
 import type { UserModule } from './types'
 import { ViteSSG } from 'vite-ssg'
+import { getToken, isGuestMode, removeToken } from '~/api/request'
+import { authApi } from '~/api/auth'
+import { useAuth } from '~/composables/useAuth'
 
 // import "~/styles/element/index.scss";
 
@@ -42,6 +45,54 @@ export const createApp = ViteSSG(
     // install all modules under `modules/`
     Object.values(import.meta.glob<{ install: UserModule }>('./modules/*.ts', { eager: true }))
       .forEach(i => i.install?.(ctx))
-    // ctx.app.use(Previewer)
+
+    // 仅在浏览器端执行登录恢复和路由守卫
+    if (import.meta.env.SSR) return
+
+    const token = getToken()
+
+    // 路由守卫：统一处理未登录和游客模式
+    ctx.router.beforeEach((to, _from, next) => {
+      const hasToken = !!getToken()
+      const isGuest = isGuestMode()
+      const isPublicRoute = to.path === '/login' || to.path === '/register'
+
+      // 1. 根路径默认跳转到登录页
+      if (to.path === '/') {
+        next('/login')
+        return
+      }
+
+      // 2. 公开路由（登录/注册页）：已登录用户访问时跳转到控制台
+      if (isPublicRoute && hasToken && !isGuest) {
+        next('/dashboard')
+        return
+      }
+
+      // 3. 非公开路由：未登录且非游客时，统一重定向到登录页
+      if (!isPublicRoute && !hasToken && !isGuest) {
+        next('/login')
+        return
+      }
+
+      // 4. 其他情况正常放行
+      next()
+    })
+
+    // 游客模式：本地有 isGuest 即可，跳过后端校验
+    if (!token || isGuestMode()) {
+      return
+    }
+
+    // 有 Token：调用后端 /api/user/info 恢复用户信息
+    const { setUserInfo } = useAuth()
+    authApi.getUserInfo()
+      .then((info) => {
+        setUserInfo(info)
+      })
+      .catch(() => {
+        // Token 无效时清理并保持未登录状态
+        removeToken()
+      })
   },
 )

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getToken } from '~/api/request'
+import { getToken, isGuestMode } from '~/api/request'
 
 const routes = [
   // 0. 认证相关路由（公开访问）
@@ -70,7 +70,7 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫：如果需要登录的页面没有 Token，跳转到登录页
+// 路由守卫：如果需要登录的页面没有 Token 且不是游客模式，跳转到登录页
 router.beforeEach((to, from, next) => {
   const token = getToken()
   
@@ -80,8 +80,8 @@ router.beforeEach((to, from, next) => {
     return
   }
   
-  // 如果路由要求登录但没有 Token，跳转到登录页
-  if (to.meta.requiresAuth && !token) {
+  // 如果路由要求登录但没有 Token 且不是游客模式，跳转到登录页
+  if (to.meta.requiresAuth && !token && !isGuestMode()) {
     next('/login')
     return
   }

@@ -9,6 +9,9 @@ import com.neozeng.trackerserve.pojo.dto.ClickTrendItem;
 import com.neozeng.trackerserve.pojo.dto.ShortLinkUpdateDTO;
 import com.neozeng.trackerserve.pojo.dto.TopLinkItem;
 import com.neozeng.trackerserve.service.ShortLinkService;
+import com.neozeng.trackerserve.util.UserHolder;
+import com.neozeng.trackerserve.pojo.User;
+import com.neozeng.trackerserve.exception.UnAuthorizedException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -177,15 +180,23 @@ public class ShortLinkController {
     })
     @GetMapping("/visits/recent")
     public Result<List<VisitLog>> getRecentVisits() {
-        // 使用 PageRequest 构建分页请求：第0页，取5条，按创建时间倒序排列
-        Pageable pageable = PageRequest.of(0, 5, Sort.by("createTime").descending());
-        // 执行查询
-        Page<VisitLog> page = visitLogMapper.findAll(pageable);
+        User user = UserHolder.getUser();
+        if (user == null) {
+            throw new UnAuthorizedException();
+        }
 
-        // 3. Page 对象的 getContent() 永远返回 List<T>
-        List<VisitLog> logs = page.getContent();
-        // 返回封装好的结果
-        return Result.success(logs);
+        // 游客模式下不返回任何真实访问记录，提示需登录
+        if (user.getId() != null && user.getId() == 0L) {
+            throw new UnAuthorizedException("游客模式下无法查看访问详情，请登录后再试");
+        }
+
+        // 当前用户最近 5 条访问记录
+        Pageable pageable = PageRequest.of(0, 5, Sort.by("createTime").descending());
+        Page<VisitLog> page = visitLogMapper.findAll(pageable);
+        List<VisitLog> filtered = page.getContent().stream()
+                .filter(v -> user.getId().equals(v.getUserId()))
+                .toList();
+        return Result.success(filtered);
     }
 
     /**
@@ -208,12 +219,26 @@ public class ShortLinkController {
             @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "每页大小", example = "20")
             @RequestParam(defaultValue = "20") int size) {
+        User user = UserHolder.getUser();
+        if (user == null) {
+            throw new UnAuthorizedException();
+        }
+
+        // 游客模式禁止访问完整访问详情列表
+        if (user.getId() != null && user.getId() == 0L) {
+            throw new UnAuthorizedException("游客模式下无法查看访问详情列表，请登录后继续");
+        }
+
         Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
         Page<VisitLog> visitPage = visitLogMapper.findAll(pageable);
-        
+
+        List<VisitLog> filteredContent = visitPage.getContent().stream()
+                .filter(v -> user.getId().equals(v.getUserId()))
+                .toList();
+
         Map<String, Object> response = new HashMap<>();
-        response.put("content", visitPage.getContent());
-        response.put("totalElements", visitPage.getTotalElements());
+        response.put("content", filteredContent);
+        response.put("totalElements", (long) filteredContent.size());
         
         return Result.success(response);
     }
@@ -236,11 +261,16 @@ public class ShortLinkController {
     public Result<List<ClickTrendItem>> getClickTrend(
             @Parameter(description = "统计天数，默认7天", example = "7")
             @RequestParam(defaultValue = "7") int days) {
+        User user = UserHolder.getUser();
+        if (user == null) {
+            throw new UnAuthorizedException();
+        }
+
         // 计算开始时间
         LocalDateTime startTime = LocalDateTime.now().minusDays(days).withHour(0).withMinute(0).withSecond(0);
         
         // 查询时间范围内的访问记录
-        List<VisitLog> logs = visitLogMapper.findByCreateTimeAfter(startTime);
+        List<VisitLog> logs = visitLogMapper.findByUserIdAndCreateTimeAfter(user.getId(), startTime);
         
         // 按日期分组统计
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");

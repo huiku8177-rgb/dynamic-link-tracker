@@ -20,12 +20,17 @@ import java.util.List;
 @Repository
 public interface ShortLinkMapper extends JpaRepository<ShortLink, Long> {
     ShortLink findByShortCode(String shortCode);
+
+    /**
+     * 根据用户 ID 查询该用户创建的所有短链接
+     */
+    List<ShortLink> findByUserId(Long userId);
     
     /**
      * 查询点击量最多的前 N 个短链接
      */
-    @Query("SELECT s FROM ShortLink s ORDER BY s.totalClicks DESC")
-    List<ShortLink> findTopByOrderByTotalClicksDesc(Pageable pageable);
+    @Query("SELECT s FROM ShortLink s WHERE s.userId = :userId ORDER BY s.totalClicks DESC")
+    List<ShortLink> findTopByUserIdOrderByTotalClicksDesc(@Param("userId") Long userId, Pageable pageable);
 
     @Modifying // 💡 必须加，表示这是一个修改操作
     @Transactional // 💡 必须加，确保更新操作在事务中执行
