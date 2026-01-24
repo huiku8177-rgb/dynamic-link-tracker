@@ -132,7 +132,7 @@ import { statsApi, type VisitLog, type ClickTrendItem, type TopLinkItem } from '
 import { ElMessage } from 'element-plus'
 import GuestView from '~/components/GuestView.vue'
 
-const { isLoggedIn } = useAuth()
+const { isLoggedIn, isGuest } = useAuth()
 
 // 图表实例
 let trendChart: echarts.ECharts | null = null
@@ -329,17 +329,17 @@ const handleResize = () => {
 }
 
 onMounted(async () => {
-  // 未登录时，不请求后端数据，只展示 GuestView 和登录/注册按钮
-  if (!isLoggedIn.value) {
-    return
+  // 游客模式或已登录时都加载数据（游客模式显示公开预览数据）
+  if (isGuest.value || isLoggedIn.value) {
+    await Promise.all([
+      loadClickTrend(),
+      loadTopLinks()
+    ])
+    // 访问记录仅在已登录时加载（游客模式不显示）
+    if (isLoggedIn.value) {
+      await loadVisitRecords()
+    }
   }
-
-  // 已登录时加载数据
-  await Promise.all([
-    loadClickTrend(),
-    loadTopLinks(),
-    loadVisitRecords()
-  ])
 
   // 监听窗口大小变化
   window.addEventListener('resize', handleResize)
@@ -354,6 +354,20 @@ watch(
         loadClickTrend(),
         loadTopLinks(),
         loadVisitRecords()
+      ])
+      window.addEventListener('resize', handleResize)
+    }
+  }
+)
+
+// 监听游客模式变化，切换到游客模式时加载公开数据
+watch(
+  () => isGuest.value,
+  async (val) => {
+    if (val) {
+      await Promise.all([
+        loadClickTrend(),
+        loadTopLinks()
       ])
       window.addEventListener('resize', handleResize)
     }

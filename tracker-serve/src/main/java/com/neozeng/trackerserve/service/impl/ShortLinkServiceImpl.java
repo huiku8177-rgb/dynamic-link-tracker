@@ -361,4 +361,50 @@ public class ShortLinkServiceImpl implements ShortLinkService {
             return new TopLinkItem(shortCode, longUrl, score);
         }).collect(Collectors.toList());
     }
+
+    /**
+     * 从全局排行榜获取热门短链接（游客模式使用）
+     * @param limit 返回数量
+     * @return 热门短链接列表
+     */
+    @Override
+    public List<TopLinkItem> getTopLinksFromGlobalRanking(int limit) {
+        // 1. 定义全局排行榜的 ZSet Key
+        String globalRankingKey = "shortLink:ranking:global";
+
+        // 2. 尝试从 Redis ZSet 获取全局前 N 名 (Score从高到低)
+        Set<ZSetOperations.TypedTuple<String>> typedTuples =
+                redisTemplate.opsForZSet().reverseRangeWithScores(globalRankingKey, 0, limit - 1);
+
+        // 3. 如果 Redis 为空，回退到 DB 并预热
+        if (CollUtil.isEmpty(typedTuples)) {
+            log.info("全局 Redis 排行榜为空，回退到数据库查询并预热数据");
+            // 使用全局查询方法（不按用户过滤）
+            List<ShortLink> allLinks = shortLinkMapper.findAll();
+            List<ShortLink> topLinks = allLinks.stream()
+                    .sorted((a, b) -> Integer.compare(
+                            (b.getTotalClicks() != null ? b.getTotalClicks() : 0),
+                            (a.getTotalClicks() != null ? a.getTotalClicks() : 0)
+                    ))
+                    .limit(limit)
+                    .collect(Collectors.toList());
+
+            // 预热全局排行榜
+            topLinks.forEach(link ->
+                  redisTemplate.opsForZSet().add(globalRankingKey, link.getShortCode(), link.getTotalClicks().doubleValue())
+            );
+
+            return topLinks.stream()
+                    .map(l -> new TopLinkItem(l.getShortCode(), l.getLongUrl(), l.getTotalClicks()))
+                    .collect(Collectors.toList());
+        }
+
+        // 4. Redis 有数据时，直接从缓存构造结果
+        return typedTuples.stream().map(tuple -> {
+            String shortCode = tuple.getValue();
+            int score = tuple.getScore().intValue();
+            String longUrl = getRedirectUrl(shortCode);
+            return new TopLinkItem(shortCode, longUrl, score);
+        }).collect(Collectors.toList());
+    }
 }

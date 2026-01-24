@@ -29,4 +29,11 @@ public interface ShortLinkService {
     boolean updateShortLink(Long id, String longUrl, LocalDateTime expireDate);
 
     List<TopLinkItem> getTopLinksRealTime(int limit);
+
+    /**
+     * 从全局排行榜获取热门短链接（游客模式使用）
+     * @param limit 返回数量
+     * @return 热门短链接列表
+     */
+    List<TopLinkItem> getTopLinksFromGlobalRanking(int limit);
 }

@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.Random;
 import java.util.stream.Collectors;
 
 /**
@@ -266,6 +267,12 @@ public class ShortLinkController {
             throw new UnAuthorizedException();
         }
 
+        // 游客模式：返回模拟的趋势数据，展示系统分析能力
+        if (user.getId() != null && user.getId() == 0L) {
+            log.info("游客模式访问点击量趋势接口，返回模拟数据");
+            return Result.success(buildGuestMockTrendData(days));
+        }
+
         // 计算开始时间
         LocalDateTime startTime = LocalDateTime.now().minusDays(days).withHour(0).withMinute(0).withSecond(0);
         
@@ -294,6 +301,32 @@ public class ShortLinkController {
     }
 
     /**
+     * 构建游客模式的模拟趋势数据
+     */
+    private List<ClickTrendItem> buildGuestMockTrendData(int days) {
+        List<ClickTrendItem> trendData = new ArrayList<>();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        LocalDate currentDate = LocalDate.now();
+        
+        // 生成一个模拟的趋势：前几天下滑，中间波动，最近上升
+        Random random = new Random();
+        for (int i = days - 1; i >= 0; i--) {
+            LocalDate date = currentDate.minusDays(i);
+            String dateStr = date.format(formatter);
+            
+            // 模拟数据：基础值 + 随机波动 + 趋势
+            long baseValue = 50L;
+            long trend = (days - i) * 3; // 最近几天上升趋势
+            long randomVariation = random.nextInt(30);
+            long clicks = baseValue + trend + randomVariation;
+            
+            trendData.add(new ClickTrendItem(dateStr, clicks));
+        }
+        
+        return trendData;
+    }
+
+    /**
      * 获取热门短链接排行
      * 对应前端地址：GET /api/shortLink/stats/topLinks?limit=5
      */
@@ -311,10 +344,20 @@ public class ShortLinkController {
     public Result<List<TopLinkItem>> getTopLinks(
             @Parameter(description = "返回数量，默认5条", example = "5")
             @RequestParam(defaultValue = "5") int limit) {
+        User user = UserHolder.getUser();
+        if (user == null) {
+            throw new UnAuthorizedException();
+        }
 
-        // 💡 调用 Service 层的新逻辑
+        // 游客模式：从全局排行榜获取公开数据
+        if (user.getId() != null && user.getId() == 0L) {
+            log.info("游客模式访问热门排行接口，返回全局排行榜数据");
+            List<TopLinkItem> result = shortLinkService.getTopLinksFromGlobalRanking(limit);
+            return Result.success(result);
+        }
+
+        // 正常用户：调用 Service 层获取个人排行榜
         List<TopLinkItem> result = shortLinkService.getTopLinksRealTime(limit);
-
         return Result.success(result);
     }
 
